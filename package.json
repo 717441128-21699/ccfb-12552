@@ -1,0 +1,21 @@
+{
+  "name": "aligner-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "隐形正畸排牙动画工具：口扫 STL 导入、牙齿分割、移动规划、自动拆步、邻面去釉、WebGPU 渲染",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --loader ./test/ts-loader.mjs src/tests/ipr.test.ts src/tests/planner.test.ts src/tests/gum.test.ts src/tests/stl.test.ts",
+    "gen:testmodel": "node --loader ./test/ts-loader.mjs tools/gen-test-model.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@webgpu/types": "^0.1.51",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}

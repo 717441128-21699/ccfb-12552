@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/style.css" />
+    <title>排牙动画工作室 · Aligner Studio</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside id="panel">
+        <h1>排牙动画工作室</h1>
+
+        <section class="group">
+          <h2>1. 病例与导入</h2>
+          <input type="file" id="file-stl" accept=".stl" />
+          <input type="file" id="file-labels" accept=".lab,.labels,.json" title="顶点/三角面标签文件（可选，不带则用内置演示牙列）" />
+          <div class="row">
+            <button id="btn-demo" type="button">载入演示牙列</button>
+            <button id="btn-testmodel" type="button" title="两颗已知间距测试牙，用于去釉真值校验">测试牙</button>
+          </div>
+          <div id="case-info" class="info"></div>
+        </section>
+
+        <section class="group">
+          <h2>2. 牙齿分割</h2>
+          <div id="seg-info" class="info"></div>
+          <label class="row toggle"><input type="checkbox" id="chk-gum" checked /> 显示牙龈</label>
+        </section>
+
+        <section class="group">
+          <h2>3. 移动规划</h2>
+          <label>选中牙位
+            <select id="sel-tooth"></select>
+          </label>
+          <div class="grid3">
+            <label>近远中 mm<input type="number" id="in-tx" step="0.1" value="0" /></label>
+            <label>颊舌 mm<input type="number" id="in-ty" step="0.1" value="0" /></label>
+            <label>龈合 mm<input type="number" id="in-tz" step="0.1" value="0" /></label>
+            <label>扭转 °<input type="number" id="in-yaw" step="1" value="0" /></label>
+            <label>倾斜 °<input type="number" id="in-tilt" step="1" value="0" /></label>
+            <label>转矩 °<input type="number" id="in-torque" step="1" value="0" /></label>
+          </div>
+          <div class="row">
+            <button id="btn-apply" type="button">应用目标位</button>
+            <button id="btn-clear" type="button">清空规划</button>
+          </div>
+          <label>每步平移上限 (mm)<input type="number" id="in-maxtrans" step="0.05" min="0.05" value="0.3" /></label>
+          <label>每步旋转上限 (°)<input type="number" id="in-maxrot" step="0.5" min="0.2" value="2" /></label>
+          <label>单面去釉上限 (mm)<input type="number" id="in-maxipr" step="0.05" min="0.1" value="0.5" /></label>
+          <div class="row">
+            <button id="btn-plan" type="button" class="primary">生成分步方案</button>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>4. 邻面去釉 IPR</h2>
+          <div id="ipr-info" class="info"></div>
+        </section>
+
+        <section class="group">
+          <h2>5. 动画</h2>
+          <input type="range" id="timeline" min="0" max="0" step="1" value="0" />
+          <div class="row">
+            <button id="btn-play" type="button">播放</button>
+            <span id="step-label" class="info"></span>
+          </div>
+          <div id="active-teeth" class="info"></div>
+        </section>
+
+        <section class="group">
+          <h2>渲染</h2>
+          <label class="row toggle"><input type="checkbox" id="chk-sss" checked /> 釉质次表面散射近似</label>
+          <div id="gpu-info" class="info"></div>
+        </section>
+      </aside>
+      <main id="viewport">
+        <canvas id="canvas"></canvas>
+        <div id="badge" class="badge"></div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
