@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>虚拟风洞 · WebGPU LBM</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e13;
+      font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; color: #cfd8e3; }
+    #gpu { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .panel { position: fixed; top: 12px; width: 264px; padding: 12px 14px; border-radius: 10px;
+      background: rgba(16, 20, 28, 0.82); backdrop-filter: blur(8px);
+      border: 1px solid rgba(120, 150, 190, 0.18); user-select: none; }
+    #panel-left { left: 12px; }
+    #panel-right { right: 12px; max-height: calc(100% - 24px); overflow-y: auto; }
+    h1 { font-size: 15px; margin: 0 0 8px; color: #e8eef6; }
+    h1 span { font-size: 11px; color: #7f93ad; font-weight: normal; }
+    h2 { font-size: 12px; margin: 14px 0 6px; color: #8fb4e8; text-transform: uppercase; letter-spacing: 1px; }
+    h2:first-child { margin-top: 0; }
+    .stats div { display: flex; justify-content: space-between; padding: 1px 0; color: #9fb0c6; }
+    .stats b { color: #e8eef6; font-variant-numeric: tabular-nums; }
+    .cd { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(120,150,190,0.18); }
+    .cd-now { font-size: 13px; }
+    .cd-now b { font-size: 22px; color: #ffd166; font-variant-numeric: tabular-nums; }
+    .cd .row { display: flex; gap: 6px; margin: 8px 0 6px; }
+    #cd-compare { color: #9fb0c6; font-size: 12px; }
+    #cd-compare b { color: #e8eef6; font-variant-numeric: tabular-nums; }
+    #cd-delta.pos { color: #ff7b72; } #cd-delta.neg { color: #7ee787; }
+    .ctl { margin: 7px 0; }
+    .ctl label { display: flex; justify-content: space-between; color: #9fb0c6; margin-bottom: 2px; }
+    .ctl label b { color: #d7e2f0; font-weight: normal; font-variant-numeric: tabular-nums; }
+    .ctl input[type=range] { width: 100%; accent-color: #4f8ff7; }
+    .ctl.disabled { opacity: 0.35; pointer-events: none; }
+    .chk { display: flex; align-items: center; gap: 8px; margin: 7px 0; color: #9fb0c6; cursor: pointer; }
+    .chk input { accent-color: #4f8ff7; }
+    button { flex: 1; padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(120,150,190,0.35);
+      background: rgba(60, 90, 140, 0.25); color: #cfe0f5; cursor: pointer; font-size: 12px; }
+    button:hover { background: rgba(80, 120, 180, 0.35); }
+    .btnrow { display: flex; gap: 6px; margin: 6px 0; }
+    #toast { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%);
+      padding: 6px 14px; border-radius: 6px; background: rgba(20,26,36,0.9);
+      border: 1px solid rgba(120,150,190,0.25); color: #ffd166; opacity: 0; transition: opacity .3s;
+      pointer-events: none; max-width: 70%; text-align: center; }
+    #hint { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
+      color: #5c6c84; font-size: 12px; pointer-events: none; }
+    #fatal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      background: #0b0e13; color: #ffb4ab; padding: 40px; text-align: center; white-space: pre-wrap; z-index: 10; }
+  </style>
+  <script type="module" crossorigin src="/assets/index-UNso1Vyu.js"></script>
+</head>
+<body>
+  <canvas id="gpu"></canvas>
+
+  <div id="panel-left" class="panel">
+    <h1>虚拟风洞 <span>WebGPU · LBM D3Q19</span></h1>
+    <div class="stats">
+      <div><span>网格</span><b id="st-grid">—</b></div>
+      <div><span>推进速度</span><b><span id="st-steps">—</span> 步/秒</b></div>
+      <div><span>雷诺数 Re</span><b id="st-re">—</b></div>
+      <div><span>正面投影面积</span><b id="st-area">—</b></div>
+    </div>
+    <div class="cd">
+      <div class="cd-now">阻力系数 Cd ≈ <b id="st-cd">—</b></div>
+      <div class="stats"><div><span>升力系数 Cl</span><b id="st-cl">—</b></div></div>
+      <div class="row">
+        <button id="btn-a">记为方案 A</button>
+        <button id="btn-b">记为方案 B</button>
+      </div>
+      <div id="cd-compare">A: <b id="cd-a">—</b>　B: <b id="cd-b">—</b>　Δ: <b id="cd-delta">—</b></div>
+    </div>
+  </div>
+
+  <div id="panel-right" class="panel">
+    <h2>流场</h2>
+    <div class="ctl"><label>风速 <b id="v-wind"></b></label>
+      <input id="s-wind" type="range" min="0.04" max="0.12" step="0.002" value="0.08"></div>
+    <div class="ctl"><label>运动粘度(格子) <b id="v-nu"></b></label>
+      <input id="s-nu" type="range" min="0.0003" max="0.004" step="0.0001" value="0.0008"></div>
+    <label class="chk"><input id="c-smoke" type="checkbox" checked> 烟线</label>
+    <label class="chk"><input id="c-slice" type="checkbox" checked> 中截面速度云图</label>
+    <div class="ctl" id="ctl-slice"><label>切片位置(车宽方向) <b id="v-slice"></b></label>
+      <input id="s-slice" type="range" min="0.05" max="0.95" step="0.01" value="0.5"></div>
+    <div class="btnrow">
+      <button id="btn-pause">暂停</button>
+      <button id="btn-reset">重置流场</button>
+    </div>
+
+    <h2>车身(参数化)</h2>
+    <div class="ctl proc"><label>后视镜位置 <b id="v-mirror"></b></label>
+      <input id="s-mirror" type="range" min="0" max="1" step="0.01" value="0.5"></div>
+    <div class="ctl proc"><label>尾翼角度 <b id="v-spoiler"></b></label>
+      <input id="s-spoiler" type="range" min="-20" max="20" step="1" value="8"></div>
+    <label class="chk proc"><input id="c-spoiler" type="checkbox" checked> 安装尾翼</label>
+    <div class="ctl proc"><label>离地间隙 <b id="v-ride"></b></label>
+      <input id="s-ride" type="range" min="-0.04" max="0.10" step="0.01" value="0"></div>
+
+    <h2>模型</h2>
+    <div class="btnrow">
+      <button id="btn-load">导入 GLB / STL…</button>
+      <input id="file" type="file" accept=".glb,.stl" style="display:none">
+    </div>
+    <div class="btnrow">
+      <button id="btn-flip">模型掉头 180°</button>
+      <button id="btn-default">恢复内置车型</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <div id="hint">左键旋转 · 右键平移 · 滚轮缩放</div>
+  <div id="fatal"></div>
+</body>
+</html>
