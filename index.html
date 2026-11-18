@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebGPU 虚拟风洞 · LBM 流体仿真</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <canvas id="gpu-canvas"></canvas>
+
+    <div id="panel">
+      <h1>虚拟风洞 <span>LBM D3Q19 · WebGPU</span></h1>
+
+      <section>
+        <h2>求解器</h2>
+        <label class="row">网格
+          <select id="grid-size">
+            <option value="160x100x128">160×100×128 ≈ 2.05M 格</option>
+            <option value="192x120x144">192×120×144 ≈ 3.32M 格</option>
+            <option value="224x140x160">224×140×160 ≈ 5.02M 格</option>
+          </select>
+        </label>
+        <label class="row">来流速度 (lattice u₀)
+          <input id="u0" type="range" min="0.04" max="0.15" step="0.005" value="0.08" />
+          <span id="u0-val">0.080</span>
+        </label>
+        <label class="row">松弛参数 τ
+          <input id="tau" type="range" min="0.52" max="1.2" step="0.01" value="0.62" />
+          <span id="tau-val">0.62</span>
+        </label>
+        <label class="row">Smagorinsky C<sub>s</sub>
+          <input id="smag" type="range" min="0" max="0.35" step="0.01" value="0.17" />
+          <span id="smag-val">0.17</span>
+        </label>
+        <div class="btn-row">
+          <button id="btn-play">⏸ 暂停</button>
+          <button id="btn-reset">↺ 重置流场</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>车身造型</h2>
+        <label class="row">后视镜外移
+          <input id="mirror" type="range" min="0" max="8" step="1" value="2" />
+          <span id="mirror-val">2</span>
+        </label>
+        <label class="row">尾翼角度 (°)
+          <input id="wing" type="range" min="-10" max="25" step="1" value="8" />
+          <span id="wing-val">8°</span>
+        </label>
+        <label class="row">尾翼高度
+          <input id="wing-h" type="range" min="0" max="6" step="1" value="2" />
+          <span id="wing-h-val">2</span>
+        </label>
+        <div class="btn-row">
+          <button id="btn-revoxel">♻ 重新体素化（热启动续算）</button>
+        </div>
+        <label class="row">导入 OBJ 车身
+          <input id="obj-file" type="file" accept=".obj" />
+        </label>
+        <div id="voxel-info" class="muted">未体素化</div>
+      </section>
+
+      <section>
+        <h2>烟线喷嘴</h2>
+        <label class="row">喷嘴列数
+          <input id="smoke-n" type="range" min="4" max="24" step="1" value="12" />
+          <span id="smoke-n-val">12</span>
+        </label>
+        <label class="row">烟迹长度
+          <input id="trail" type="range" min="8" max="64" step="1" value="32" />
+          <span id="trail-val">32</span>
+        </label>
+        <label class="row"><input id="smoke-on" type="checkbox" checked /> 显示烟线</label>
+        <label class="row"><input id="pressure-on" type="checkbox" checked /> 车身压力上色</label>
+      </section>
+
+      <section>
+        <h2>气动力</h2>
+        <div class="metrics">
+          <div>步数 <b id="m-steps">0</b></div>
+          <div>速度 <b id="m-sps">–</b> 步/s</div>
+          <div>当前 Cd <b id="m-cd">–</b></div>
+          <div>平均 Cd <b id="m-cd-avg">–</b></div>
+          <div>压差占比 <b id="m-pressure-ratio">–</b></div>
+        </div>
+        <div class="btn-row">
+          <button id="btn-snapshot-a">存为方案 A</button>
+          <button id="btn-snapshot-b">存为方案 B</button>
+        </div>
+        <div id="ab-result" class="muted">保存两个方案后自动给出阻力差</div>
+      </section>
+
+      <section>
+        <h2>视图</h2>
+        <div class="btn-row">
+          <button id="btn-view-side">侧视</button>
+          <button id="btn-view-top">俯视</button>
+          <button id="btn-view-3d">3/4 视角</button>
+        </div>
+        <div id="status" class="muted">初始化中…</div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

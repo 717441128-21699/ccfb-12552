@@ -1,0 +1,57 @@
+<!doctype html>
+<html><body><pre id="log">running…</pre>
+<script type="module">
+  const logEl = document.getElementById('log');
+  const log = (...a) => { logEl.textContent += '\n' + a.join(' '); };
+  try {
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    const { requestWindTunnelDevice } = await import('/src/gpu/device.ts');
+    const device = await requestWindTunnelDevice(adapter);
+    device.addEventListener('uncapturederror', (e) => log('GPUERR', e.error.message));
+    const { LbmSolver } = await import('/src/gpu/LbmSolver.ts');
+    const { buildCarMesh } = await import('/src/lbm/carMesh.ts');
+    const { voxelizeMesh } = await import('/src/lbm/voxelize.ts');
+
+    const grids = [
+      { nx: 160, ny: 100, nz: 128 },  // ≈2.05M（需求下限）
+      { nx: 192, ny: 120, nz: 144 },  // ≈3.32M
+      { nx: 224, ny: 140, nz: 160 },  // ≈5.02M
+    ];
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('webgpu');
+    ctx.configure({ device, format: navigator.gpu.getPreferredCanvasFormat() });
+
+    const report = [];
+    for (const g of grids) {
+      const cells = g.nx * g.ny * g.nz;
+      const solver = new LbmSolver(device, ctx, { ...g, u0: 0.08, tau: 0.62, smagorinsky: 0.17 });
+      const tVox0 = performance.now();
+      const vox = voxelizeMesh(buildCarMesh({ mirrorOffset: 2, wingAngleDeg: 8, wingHeight: 2 }), g);
+      const tVox = performance.now() - tVox0;
+      solver.uploadInitialVoxels(vox.flags);
+
+      // 预热 10 步（含管线首次调度/缓存）
+      solver.step(10);
+      await device.queue.onSubmittedWorkDone();
+
+      // 正式计时：60 步，用 GPU 时间戳前后各 onSubmittedWorkDone 墙钟
+      const warm = 40;
+      solver.step(warm);
+      await device.queue.onSubmittedWorkDone();
+      const t0 = performance.now();
+      const timedSteps = 60;
+      solver.step(timedSteps);
+      await device.queue.onSubmittedWorkDone();
+      const dt = performance.now() / 1000 - t0 / 1000;
+      const sps = timedSteps / dt;
+      const memMB = (cells * (19 * 2 * 4 + 16 + 4 + 4)) / 1e6;
+      report.push({ grid: `${g.nx}×${g.ny}×${g.nz}`, cells, sps, voxelMs: tVox, memMB });
+      log(`${g.nx}×${g.ny}×${g.nz} = ${(cells / 1e6).toFixed(2)}M 格 | ${sps.toFixed(1)} 步/秒 | ` +
+        `体素化 ${tVox.toFixed(0)}ms | 缓冲≈${memMB.toFixed(0)}MB`);
+      solver.destroy();
+    }
+    log('\n需求（≥2M 格且 ≥20 步/秒）：' +
+      (report[0].cells >= 2e6 && report[0].sps >= 20 ? '满足 ✔' : '未达标 �’'));
+    window.__perfResult = report;
+  } catch (e) { log('FATAL', e.stack || e); window.__perfResult = null; }
+</script></body></html>

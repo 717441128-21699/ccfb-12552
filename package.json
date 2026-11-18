@@ -1,0 +1,24 @@
+{
+  "name": "webgpu-virtual-windtunnel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test:physics": "tsx src/physics/d2q9.test.ts",
+    "test:voxel": "tsx src/lbm/voxelize.test.ts",
+    "test:gpu": "tsx scripts/gpu-smoke.ts",
+    "test:gpu:perf": "tsx scripts/gpu-perf.ts",
+    "test:gpu:ab": "tsx scripts/gpu-ab.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@webgpu/types": "^0.1.51",
+    "puppeteer-core": "^23.11.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}

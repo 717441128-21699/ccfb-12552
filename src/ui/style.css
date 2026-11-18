@@ -1,0 +1,116 @@
+:root {
+  --bg: #0b0e14;
+  --panel: rgba(17, 21, 30, 0.92);
+  --line: #232a3a;
+  --text: #d7deea;
+  --muted: #7e8aa0;
+  --accent: #4f8cff;
+  --good: #38c172;
+  --bad: #ff6b6b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+#gpu-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+#panel {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 320px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+#panel h1 {
+  font-size: 16px;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+#panel h1 span {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+section {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+section h2 {
+  font-size: 12px;
+  color: var(--accent);
+  margin: 0 0 8px;
+  letter-spacing: 0.08em;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+.row input[type="range"] { flex: 1; min-width: 120px; }
+.row input[type="checkbox"] { accent-color: var(--accent); }
+.row span { min-width: 42px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.row select, .row input[type="file"] {
+  flex: 1;
+  background: #141a26;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.btn-row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+button {
+  background: #1a2436;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+button:hover { background: #24314a; border-color: var(--accent); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.metrics b { float: right; color: #9ec1ff; }
+.muted { color: var(--muted); font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+
+#ab-result.good { color: var(--good); }
+#ab-result.bad { color: var(--bad); }
+
+#panel::-webkit-scrollbar { width: 8px; }
+#panel::-webkit-scrollbar-thumb { background: #2a3347; border-radius: 4px; }

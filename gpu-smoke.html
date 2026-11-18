@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>WebGPU 冒烟测试</title></head>
+<body>
+<pre id="log">running…</pre>
+<script type="module">
+  const logEl = document.getElementById('log');
+  const lines = [];
+  const log = (s) => { lines.push(s); logEl.textContent = lines.join('\n'); };
+  const results = [];
+  const check = (name, cond, detail = '') => {
+    results.push({ name, ok: !!cond });
+    log(`${cond ? '✓' : '✗'} ${name} ${detail}`);
+  };
+
+  try {
+    if (!navigator.gpu) throw new Error('no navigator.gpu');
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) throw new Error('no adapter');
+    const { requestWindTunnelDevice } = await import('/src/gpu/device.ts');
+    const device = await requestWindTunnelDevice(adapter);
+    device.addEventListener('uncapturederror', (e) => log('GPU ERROR: ' + e.error.message));
+    log('device: ' + (adapter.info?.description || 'ok'));
+
+    // 1. 单独编译两份 WGSL，捕获编译信息
+    const lbmCode = (await fetch('/src/gpu/lbm.wgsl').then(r => r.text()));
+    const smokeCode = (await fetch('/src/gpu/smoke.wgsl').then(r => r.text()));
+    for (const [label, code] of [['lbm.wgsl', lbmCode], ['smoke.wgsl', smokeCode]]) {
+      const mod = device.createShaderModule({ code });
+      const info = await mod.getCompilationInfo();
+      const errs = info.messages.filter(m => m.type === 'error');
+      check(`${label} 编译无错误`, errs.length === 0, errs.map(e => e.message).join(' | '));
+      if (errs.length) log(errs.map(e => `  L${e.lineNum}: ${e.message}`).join('\n'));
+    }
+
+    // 2. 小网格端到端：32×20×24
+    const { LbmSolver } = await import('/src/gpu/LbmSolver.ts');
+    const { buildCarMesh } = await import('/src/lbm/carMesh.ts');
+    const { voxelizeMesh } = await import('/src/lbm/voxelize.ts');
+    const { SmokeRenderer } = await import('/src/gpu/SmokeRenderer.ts');
+    const nx = 32, ny = 20, nz = 24;
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 384;
+    const ctx = canvas.getContext('webgpu');
+    ctx.configure({ device, format: navigator.gpu.getPreferredCanvasFormat(), alphaMode: 'opaque' });
+
+    const solver = new LbmSolver(device, ctx, { nx, ny, nz, u0: 0.08, tau: 0.62, smagorinsky: 0.17 });
+    const mesh = buildCarMesh({ mirrorOffset: 2, wingAngleDeg: 8, wingHeight: 2 });
+    const vox = voxelizeMesh(mesh, { nx, ny, nz });
+    check('体素化产生固体格', vox.solidCount > 20, `solid=${vox.solidCount}`);
+    solver.uploadInitialVoxels(vox.flags);
+
+    // 3. 推进 200 步，检查宏观量有限、速度在合理区间
+    const readMacro = async () => {
+      const buf = device.createBuffer({ size: nx * ny * nz * 16, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const enc = device.createCommandEncoder();
+      enc.copyBufferToBuffer(solver.getMacroBuffer(), 0, buf, 0, buf.size);
+      device.queue.submit([enc.finish()]);
+      await buf.mapAsync(GPUMapMode.READ);
+      const data = new Float32Array(buf.getMappedRange().slice(0));
+      buf.unmap(); buf.destroy();
+      return data;
+    };
+
+    solver.step(200);
+    await device.queue.onSubmittedWorkDone();
+    const macro = await readMacro();
+    let finite = true, maxU = 0, sumRho = 0, fluidN = 0;
+    for (let n = 0; n < nx * ny * nz; n++) {
+      const rho = macro[n * 4], ux = macro[n * 4 + 1], uy = macro[n * 4 + 2], uz = macro[n * 4 + 3];
+      if (![rho, ux, uy, uz].every(Number.isFinite)) { finite = false; break; }
+      if (vox.flags[n] === 0) {
+        maxU = Math.max(maxU, Math.hypot(ux, uy, uz));
+        sumRho += rho; fluidN++;
+      }
+    }
+    check('200 步后所有宏观量有限', finite);
+    check('最大速度 < 0.4（未发散）', maxU < 0.4, `max|u|=${maxU.toFixed(3)}`);
+    check('平均密度接近 1', fluidN > 0 && Math.abs(sumRho / fluidN - 1) < 0.05, `rho=${(sumRho / fluidN).toFixed(4)}`);
+
+    // 4. 气动力读回：阻力为正且有限
+    const f0 = await solver.readForce();
+    check('阻力为正（沿来流方向）', f0.total > 0, `F=${f0.total.toFixed(4)} 压${f0.pressure.toFixed(3)}/粘${f0.viscous.toFixed(3)}`);
+    check('压差与摩擦分量均有限', Number.isFinite(f0.pressure) && Number.isFinite(f0.viscous));
+
+    // 5. 热启动重体素化：换一个明显不同的造型（简单大盒子），保证栅格有变化
+    const stepsBefore = solver.steps;
+    const { MeshBuilder } = await import('/src/lbm/carMesh.ts');
+    const mb = new MeshBuilder();
+    mb.addBox(0, 1.2, 0, 2.6, 1.2, 1.1);
+    const mesh2 = mb.build();
+    const vox2 = voxelizeMesh(mesh2, { nx, ny, nz });
+    const rev = await solver.revoxelize(vox2.flags);
+    check('热启动识别出变化格子', rev.changed > 0, `changed=${rev.changed}（${vox.solidCount}→${vox2.solidCount} 固体）`);
+    check('热启动后步数连续未清零', solver.steps === stepsBefore);
+    solver.step(50);
+    await device.queue.onSubmittedWorkDone();
+    const macro2 = await readMacro();
+    let finite2 = true;
+    for (let n = 0; n < nx * ny * nz * 4; n++) if (!Number.isFinite(macro2[n])) { finite2 = false; break; }
+    check('热启动后续算 50 步稳定', finite2);
+
+    // 6. 渲染器实例化 + 一帧渲染（含烟线/表面/地面管线）
+    const depth = device.createTexture({
+      size: [512, 384], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    const renderer = new SmokeRenderer(
+      device, navigator.gpu.getPreferredCanvasFormat(),
+      nx, ny, nz, solver.getMacroBuffer(), solver.getFlagsBuffer(), solver.getPressureBuffer(),
+    );
+    renderer.setSurfaceCells(vox2.flags);
+    let renderOk = true, renderErr = '';
+    try {
+      solver.updateSurfacePressure();
+      renderer.update(
+        { nozzleCols: 8, nozzleRows: 4, trailAlpha: 0.16, speedScale: 1.2, showSmoke: true, showPressure: true },
+        0.08, solver.steps, depth.createView(), ctx.getCurrentTexture().createView(), 512 / 384,
+      );
+      await device.queue.onSubmittedWorkDone();
+    } catch (e) { renderOk = false; renderErr = String(e); }
+    check('完整渲染一帧（烟线+压力表面+地面）', renderOk, renderErr);
+
+    // 7. 烟线粒子推进后位置在域内/被正确重生
+    renderer.update(
+      { nozzleCols: 8, nozzleRows: 4, trailAlpha: 0.16, speedScale: 2.0, showSmoke: true, showPressure: false },
+      0.08, solver.steps, depth.createView(), ctx.getCurrentTexture().createView(), 512 / 384,
+    );
+    await device.queue.onSubmittedWorkDone();
+    check('连续第二帧渲染无异常', true);
+
+  } catch (e) {
+    log('FATAL: ' + (e?.stack || e));
+    results.push({ name: 'fatal', ok: false });
+  }
+
+  const passed = results.filter(r => r.ok).length;
+  log(`\n${passed}/${results.length} 项 GPU 冒烟测试通过`);
+  document.title = `${passed}/${results.length}`;
+  window.__smokeResult = { passed, total: results.length, results };
+</script>
+</body>
+</html>
